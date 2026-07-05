@@ -1,0 +1,272 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+var app = require('../app');
+var debug = require('debug')('jan:server');
+var http = require('http');
+var { Server } = require('socket.io');
+
+/**
+ * Get port from environment and store in Express.
+ */
+
+var port = normalizePort(process.env.PORT || '3000');
+app.set('port', port);
+
+/**
+ * Create HTTP server.
+ */
+
+var server = http.createServer(app);
+var io = new Server(server);
+var timerState = {
+  active: false,
+  startedAt: null,
+  elapsedSeconds: 0,
+  autoStartEnabled: false,
+  autoStartTime: null,
+  lastStartedAt: null,
+  winner: null
+};
+
+app.set('io', io);
+app.set('timerState', timerState);
+
+function broadcastTimerState() {
+  io.emit('timerState', getTimerState());
+}
+
+function getCurrentElapsedSeconds() {
+  if (!timerState.active || !timerState.startedAt) {
+    return timerState.elapsedSeconds || 0;
+  }
+
+  return timerState.elapsedSeconds + Math.floor((Date.now() - timerState.startedAt) / 1000);
+}
+
+function getTimerState() {
+  if (!timerState.active || !timerState.startedAt) {
+    return {
+      active: false,
+      startedAt: null,
+      elapsedSeconds: timerState.elapsedSeconds || 0,
+      autoStartEnabled: timerState.autoStartEnabled || false,
+      autoStartTime: timerState.autoStartTime || null,
+      winner: timerState.winner || null
+    };
+  }
+
+  return {
+    active: true,
+    startedAt: timerState.startedAt,
+    elapsedSeconds: getCurrentElapsedSeconds(),
+    autoStartEnabled: timerState.autoStartEnabled || false,
+    autoStartTime: timerState.autoStartTime || null,
+    winner: timerState.winner || null
+  };
+}
+
+function getWinnerFromVotes(votes, elapsedSeconds) {
+  if (!votes || !votes.length) {
+    return null;
+  }
+
+  var bestMatch = null;
+  var bestDifference = null;
+
+  votes.forEach(function(item) {
+    var parts = String(item.time).split(':');
+    if (parts.length !== 2) {
+      return;
+    }
+
+    var totalSeconds = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+    var difference = Math.abs(totalSeconds - elapsedSeconds);
+
+    if (bestDifference === null || difference < bestDifference) {
+      bestDifference = difference;
+      bestMatch = item;
+    }
+  });
+
+  return bestMatch;
+}
+
+function getCurrentClockTime() {
+  var now = new Date();
+  var hours = String(now.getHours()).padStart(2, '0');
+  var minutes = String(now.getMinutes()).padStart(2, '0');
+  return hours + ':' + minutes;
+}
+
+function parseAutoStartTime(value) {
+  if (!value) {
+    return null;
+  }
+
+  var match = /^([0-2]\d):([0-5]\d)$/.exec(value);
+  if (!match) {
+    return null;
+  }
+
+  return value;
+}
+
+function maybeAutoStartTimer() {
+  if (!timerState.autoStartEnabled || !timerState.autoStartTime || timerState.active) {
+    return;
+  }
+
+  var now = getCurrentClockTime();
+  if (now !== timerState.autoStartTime) {
+    return;
+  }
+
+  timerState.active = true;
+  timerState.startedAt = Date.now();
+  timerState.elapsedSeconds = 0;
+  timerState.lastStartedAt = timerState.startedAt;
+
+  io.emit('timerStarted', {
+    startedAt: timerState.startedAt
+  });
+  broadcastTimerState();
+}
+
+setInterval(maybeAutoStartTimer, 1000);
+
+io.on('connection', function(socket) {
+  console.log('a user connected');
+
+  socket.emit('timerState', getTimerState());
+
+  socket.on('timer:start', function() {
+    timerState.active = true;
+    timerState.startedAt = Date.now();
+    timerState.elapsedSeconds = 0;
+    timerState.lastStartedAt = timerState.startedAt;
+    timerState.winner = null;
+
+    io.emit('timerStarted', {
+      startedAt: timerState.startedAt
+    });
+    broadcastTimerState();
+  });
+
+  socket.on('timer:stop', function() {
+    if (timerState.active && timerState.startedAt) {
+      timerState.elapsedSeconds = getCurrentElapsedSeconds();
+    }
+
+    timerState.active = false;
+    timerState.startedAt = null;
+
+    var winner = null;
+    if (timerState.elapsedSeconds >= 0) {
+      winner = getWinnerFromVotes(app.locals.data || [], timerState.elapsedSeconds);
+    }
+
+    timerState.winner = winner ? { name: winner.name, time: winner.time } : null;
+
+    io.emit('timerStopped', {
+      elapsedSeconds: timerState.elapsedSeconds,
+      winner: timerState.winner
+    });
+    broadcastTimerState();
+  });
+
+  socket.on('timer:autoStart', function(payload) {
+    var parsedTime = parseAutoStartTime(payload && payload.time);
+    timerState.autoStartEnabled = !!(payload && payload.enabled);
+    timerState.autoStartTime = parsedTime;
+
+    io.emit('timerAutoSettings', {
+      enabled: timerState.autoStartEnabled,
+      time: timerState.autoStartTime
+    });
+  });
+
+  socket.on('timer:clearWinner', function() {
+    timerState.winner = null;
+    broadcastTimerState();
+  });
+
+  socket.on('timer:getState', function() {
+    socket.emit('timerState', getTimerState());
+  });
+
+  socket.on('disconnect', function() {
+    console.log('user disconnected');
+  });
+});
+
+/**
+ * Listen on provided port, on all network interfaces.
+ */
+
+server.listen(port);
+server.on('error', onError);
+server.on('listening', onListening);
+
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    // named pipe
+    return val;
+  }
+
+  if (port >= 0) {
+    // port number
+    return port;
+  }
+
+  return false;
+}
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+  if (error.syscall !== 'listen') {
+    throw error;
+  }
+
+  var bind = typeof port === 'string'
+    ? 'Pipe ' + port
+    : 'Port ' + port;
+
+  // handle specific listen errors with friendly messages
+  switch (error.code) {
+    case 'EACCES':
+      console.error(bind + ' requires elevated privileges');
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      console.error(bind + ' is already in use');
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === 'string'
+    ? 'pipe ' + addr
+    : 'port ' + addr.port;
+  debug('Listening on ' + bind);
+}

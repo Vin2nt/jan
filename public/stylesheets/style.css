@@ -1,0 +1,25 @@
+body {
+  padding: 50px;
+  font: 14px "Lucida Grande", Helvetica, Arial, sans-serif;
+}
+
+a {
+  color: #00B7FF;
+}
+
+.alert {
+  padding: 10px 12px;
+  margin-bottom: 15px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.alert.success {
+  background: #e7f7ed;
+  color: #1f7a3f;
+}
+
+.alert.error {
+  background: #fdecea;
+  color: #b42318;
+}

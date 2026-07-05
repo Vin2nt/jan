@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <title><%= title %></title>
+    <link rel='stylesheet' href='/stylesheets/style.css' />
+  </head>
+  <body>
+    <h1><%= title %></h1>
+    <% if (message) { %>
+  <div class="alert <%= messageType %>"><%= message %></div>
+<% } %>
+    <div id="form">
+        <form id="Guess-Form" action="/vote" method="POST">
+      <label for="name">Name:</label>
+      <input 
+      id="name" 
+      type="text"
+      name="name"
+      required
+       />
+    <label for="time">Zeit (mm:ss):</label>
+    <input
+    id="time"
+    name="time"
+    type="text"
+    inputmode="numeric"
+    placeholder="mm:ss"
+    pattern="[0-9]{1,2}:[0-5][0-9]"
+    title="Format: mm:ss, z.B. 03:45"
+    required
+  />
+  <button id="submit" type="submit">Senden</button>
+  </form>
+    </div>
+    <div>
+      <h1>Eingereichte Votes:</h1>
+      <div id="timer-display">Timer: 00:00</div>
+      <div id="winner-message" style="margin: 8px 0; font-weight: bold;"></div>
+      <ul id="vote-list">
+        <% data.forEach(function(item) { %>
+          <li><strong><%= item.name %></strong> - <%= item.time %></li>
+        <% }); %>
+      </ul>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const socket = io();
+      const voteList = document.getElementById('vote-list');
+      let timerInterval = null;
+      let activeTimerStartedAt = null;
+      let timerElapsedBase = 0;
+      let currentVotes = <%- JSON.stringify(data) %>;
+      let currentWinner = null;
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/\"/g, '&quot;');
+      }
+
+      function formatTime(seconds) {
+        const safeSeconds = Math.max(0, seconds);
+        const minutes = String(Math.floor(safeSeconds / 60)).padStart(2, '0');
+        const remainingSeconds = String(safeSeconds % 60).padStart(2, '0');
+        return minutes + ':' + remainingSeconds;
+      }
+
+      function renderTimer(state) {
+        const timerDisplay = document.getElementById('timer-display');
+        if (!timerDisplay) {
+          return;
+        }
+
+        if (!state || !state.active) {
+          timerDisplay.textContent = 'Timer: ' + formatTime(state && state.elapsedSeconds ? state.elapsedSeconds : 0);
+          return;
+        }
+
+        timerDisplay.textContent = 'Timer: ' + formatTime(state.elapsedSeconds || 0);
+      }
+
+      function startLocalTimer(startedAt, initialElapsedSeconds) {
+        clearInterval(timerInterval);
+
+        if (!startedAt) {
+          renderTimer({ active: false, elapsedSeconds: initialElapsedSeconds || 0 });
+          return;
+        }
+
+        activeTimerStartedAt = startedAt;
+        timerElapsedBase = initialElapsedSeconds || 0;
+        renderTimer({ active: true, elapsedSeconds: timerElapsedBase });
+
+        timerInterval = setInterval(function() {
+          const elapsedSeconds = timerElapsedBase + Math.floor((Date.now() - activeTimerStartedAt) / 1000);
+          renderTimer({ active: true, elapsedSeconds: elapsedSeconds });
+        }, 1000);
+      }
+
+      function stopLocalTimer(elapsedSeconds) {
+        if (timerInterval) {
+          clearInterval(timerInterval);
+          timerInterval = null;
+        }
+
+        activeTimerStartedAt = null;
+        timerElapsedBase = elapsedSeconds || 0;
+        renderTimer({ active: false, elapsedSeconds: timerElapsedBase });
+      }
+
+      function renderWinnerMessage(winner) {
+        const winnerMessage = document.getElementById('winner-message');
+        if (!winnerMessage) {
+          return;
+        }
+
+        if (winner && winner.name && winner.time) {
+          winnerMessage.textContent = 'Gewinner: ' + winner.name + ' - ' + winner.time;
+          winnerMessage.style.color = '#155724';
+        } else {
+          winnerMessage.textContent = '';
+        }
+      }
+
+      function renderVotes(votes, winner) {
+        currentVotes = votes || [];
+        currentWinner = winner || null;
+
+        if (!voteList) {
+          return;
+        }
+
+        voteList.innerHTML = currentVotes.map(function(item) {
+          var isWinner = currentWinner && currentWinner.name === item.name && currentWinner.time === item.time;
+          if (isWinner) {
+            return '<li class="winner-item" style="background:#d4edda; padding:6px; border-radius:4px;"><strong>' + escapeHtml(item.name) + '</strong> - ' + escapeHtml(item.time) + ' <span style="font-weight:bold; color:#155724;">WINNER</span></li>';
+          }
+          return '<li><strong>' + escapeHtml(item.name) + '</strong> - ' + escapeHtml(item.time) + '</li>';
+        }).join('');
+
+        renderWinnerMessage(currentWinner);
+      }
+
+      renderVotes(currentVotes, currentWinner);
+
+      socket.on('connect', function() {
+        console.log('Connected to Socket.IO');
+        socket.emit('timer:getState');
+      });
+
+      socket.on('votesUpdated', function(payload) {
+        renderVotes(payload.data || [], null);
+      });
+
+      socket.on('timerState', function(state) {
+        if (!state || !state.active) {
+          stopLocalTimer(state && state.elapsedSeconds ? state.elapsedSeconds : 0);
+          renderVotes(currentVotes, state && state.winner ? state.winner : null);
+          return;
+        }
+
+        startLocalTimer(state.startedAt, state.elapsedSeconds || 0);
+        renderVotes(currentVotes, state && state.winner ? state.winner : null);
+      });
+
+      socket.on('timerStarted', function(payload) {
+        startLocalTimer(payload.startedAt, 0);
+        renderVotes(currentVotes, null);
+      });
+
+      socket.on('timerStopped', function(payload) {
+        stopLocalTimer(payload.elapsedSeconds || 0);
+        renderVotes(currentVotes, payload.winner || null);
+      });
+    </script>
+  </body>
+</html>
