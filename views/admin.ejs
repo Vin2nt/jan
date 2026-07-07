@@ -1,43 +1,96 @@
-<!DOCTYPE html>
-
-<html>
+<!doctype html>
+<html lang="de">
   <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><%= title %></title>
-    <link rel='stylesheet' href='/stylesheets/style.css' />
+
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
   </head>
-  <body>
-    <h1><%= title %></h1>
-    <% if (message) { %>
-  <div class="alert <%= messageType %>"><%= message %></div>
-<% } %>
-    <div>
-      <h1>Eingereichte Votes:</h1>
-      <div id="timer-display">Timer: 00:00</div>
-      <div id="winner-message" style="margin: 8px 0; font-weight: bold;"></div>
-      <div id="timer-controls">
-        <button id="start-timer" type="button">Timer starten</button>
-        <button id="stop-timer" type="button">Timer stoppen</button>
+
+  <body class="bg-light">
+
+    <div class="container py-4">
+
+      <!-- Title -->
+      <h1 class="mb-4 text-center"><%= title %></h1>
+
+      <!-- Message -->
+      <% if (message) { %>
+        <div class="alert <%= messageType %>"><%= message %></div>
+      <% } %>
+
+      <!-- Timer Controls -->
+      <div class="card shadow-sm mb-4">
+        <div class="card-body">
+
+          <h5 class="card-title mb-3">Timer‑Steuerung</h5>
+
+          <div id="timer-display" class="fw-bold mb-3">Timer: 00:00</div>
+          <div id="winner-message" class="mb-3"></div>
+
+          <div class="d-flex gap-2 mb-3">
+            <button id="start-timer" class="btn btn-success w-50">Timer starten</button>
+            <button id="stop-timer" class="btn btn-danger w-50">Timer stoppen</button>
+          </div>
+
+          <!-- Auto Start -->
+          <div class="border rounded p-3 bg-light">
+            <h6 class="fw-bold mb-2">Automatischer Start</h6>
+
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <input id="auto-start-enabled" type="checkbox" class="form-check-input">
+              <label class="form-check-label">Automatisch starten um</label>
+
+              <input id="auto-start-time" type="text" placeholder="hh:mm" maxlength="5"
+                     class="form-control" style="width: 90px;">
+            </div>
+
+            <button id="save-auto-start" class="btn btn-primary btn-sm">Speichern</button>
+
+            <div id="auto-start-status" class="mt-2 fw-bold text-secondary">
+              Status: deaktiviert
+            </div>
+          </div>
+
+        </div>
       </div>
-      <div id="auto-start-controls" style="margin-top: 10px;">
-        <label>
-          <input id="auto-start-enabled" type="checkbox" />
-          Automatisch starten um
-        </label>
-        <input id="auto-start-time" type="text" placeholder="hh:mm" maxlength="5" style="width: 70px; margin-left: 8px;" />
-        <button id="save-auto-start" type="button">Speichern</button>
-        <div id="auto-start-status" style="margin-top: 6px; font-weight: bold;">Status: deaktiviert</div>
+
+      <!-- Votes -->
+      <div class="card shadow-sm">
+        <div class="card-body">
+
+          <h5 class="card-title mb-3">Eingereichte Votes</h5>
+
+          <ul id="vote-list" class="list-group mb-3">
+            <% data.forEach(function(item) { %>
+              <li class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                  <strong><%= item.name %></strong> – <%= item.time %>
+                </div>
+
+                <form action="/delete" method="POST" class="m-0">
+                  <input type="hidden" name="name" value="<%= item.name %>">
+                  <button class="btn btn-sm btn-outline-danger">Löschen</button>
+                </form>
+              </li>
+            <% }); %>
+          </ul>
+
+          <form action="/reset" method="POST">
+            <button class="btn btn-warning w-100">Alle löschen</button>
+          </form>
+
+        </div>
       </div>
-      <ul id="vote-list">
-        <% data.forEach(function(item) { %>
-          <li><strong><%= item.name %></strong> - <%= item.time %> <form action="/delete" method="POST"><input type="hidden" name="name" value="<%= item.name %>" /><button type="submit">Löschen</button></form></li>
-        <% }); %>
-      </ul>
-      <form action="/reset" method="POST">
-        <button type="submit">Alle löschen</button>
-      </form>
+
     </div>
 
+    <!-- Socket.IO -->
     <script src="/socket.io/socket.io.js"></script>
+
+    <!-- Admin Logic -->
     <script>
       const socket = io();
       const voteList = document.getElementById('vote-list');
@@ -64,15 +117,10 @@
 
       function renderTimer(state) {
         const timerDisplay = document.getElementById('timer-display');
-        if (!timerDisplay) {
-          return;
-        }
-
         if (!state || !state.active) {
-          timerDisplay.textContent = 'Timer: ' + formatTime(state && state.elapsedSeconds ? state.elapsedSeconds : 0);
+          timerDisplay.textContent = 'Timer: ' + formatTime(state?.elapsedSeconds || 0);
           return;
         }
-
         timerDisplay.textContent = 'Timer: ' + formatTime(state.elapsedSeconds || 0);
       }
 
@@ -88,17 +136,15 @@
         timerElapsedBase = initialElapsedSeconds || 0;
         renderTimer({ active: true, elapsedSeconds: timerElapsedBase });
 
-        timerInterval = setInterval(function() {
+        timerInterval = setInterval(() => {
           const elapsedSeconds = timerElapsedBase + Math.floor((Date.now() - activeTimerStartedAt) / 1000);
-          renderTimer({ active: true, elapsedSeconds: elapsedSeconds });
+          renderTimer({ active: true, elapsedSeconds });
         }, 1000);
       }
 
       function stopLocalTimer(elapsedSeconds) {
-        if (timerInterval) {
-          clearInterval(timerInterval);
-          timerInterval = null;
-        }
+        clearInterval(timerInterval);
+        timerInterval = null;
 
         activeTimerStartedAt = null;
         timerElapsedBase = elapsedSeconds || 0;
@@ -107,98 +153,102 @@
 
       function renderWinnerMessage(winner) {
         const winnerMessage = document.getElementById('winner-message');
-        if (!winnerMessage) {
+        if (!winner) {
+          winnerMessage.textContent = '';
           return;
         }
 
-        if (winner && winner.name && winner.time) {
-          winnerMessage.textContent = 'Gewinner: ' + winner.name + ' - ' + winner.time;
-          winnerMessage.style.color = '#155724';
-        } else {
-          winnerMessage.textContent = '';
-        }
+        winnerMessage.textContent = `Gewinner: ${winner.name} – ${winner.time}`;
+        winnerMessage.classList.add('text-success', 'fw-bold');
       }
 
       function renderVotes(votes, winner) {
         currentVotes = votes || [];
         currentWinner = winner || null;
 
-        if (!voteList) {
-          return;
-        }
+        voteList.innerHTML = currentVotes.map(item => {
+          const isWinner = currentWinner &&
+            currentWinner.name === item.name &&
+            currentWinner.time === item.time;
 
-        voteList.innerHTML = currentVotes.map(function(item) {
-          var isWinner = currentWinner && currentWinner.name === item.name && currentWinner.time === item.time;
-          if (isWinner) {
-            return '<li class="winner-item" style="background:#d4edda; padding:6px; border-radius:4px;"><strong>' + escapeHtml(item.name) + '</strong> - ' + escapeHtml(item.time) + ' <span style="font-weight:bold; color:#155724;">WINNER</span><form action="/delete" method="POST" style="display:inline-block; margin-left:8px;"><input type="hidden" name="name" value="' + escapeHtml(item.name) + '" /><button type="submit">Löschen</button></form></li>';
-          }
-          return '<li><strong>' + escapeHtml(item.name) + '</strong> - ' + escapeHtml(item.time) + ' <form action="/delete" method="POST"><input type="hidden" name="name" value="' + escapeHtml(item.name) + '" /><button type="submit">Löschen</button></form></li>';
+          return `
+            <li class="list-group-item d-flex justify-content-between align-items-center ${isWinner ? 'list-group-item-success fw-bold' : ''}">
+              <div>
+                ${escapeHtml(item.name)} – ${escapeHtml(item.time)}
+              </div>
+              <form action="/delete" method="POST" class="m-0">
+                <input type="hidden" name="name" value="${escapeHtml(item.name)}">
+                <button class="btn btn-sm btn-outline-danger">Löschen</button>
+              </form>
+            </li>
+          `;
         }).join('');
 
         renderWinnerMessage(currentWinner);
       }
 
-      document.getElementById('start-timer').addEventListener('click', function() {
+      document.getElementById('start-timer').addEventListener('click', () => {
         socket.emit('timer:start');
       });
 
-      document.getElementById('stop-timer').addEventListener('click', function() {
+      document.getElementById('stop-timer').addEventListener('click', () => {
         socket.emit('timer:stop');
       });
 
-      document.getElementById('save-auto-start').addEventListener('click', function() {
+      document.getElementById('save-auto-start').addEventListener('click', () => {
         const enabled = document.getElementById('auto-start-enabled').checked;
         const timeInput = document.getElementById('auto-start-time').value;
-        socket.emit('timer:autoStart', { enabled: enabled, time: timeInput });
+        socket.emit('timer:autoStart', { enabled, time: timeInput });
       });
 
       renderVotes(<%- JSON.stringify(data) %>);
 
-      socket.on('connect', function() {
-        console.log('Connected to Socket.IO');
-        socket.emit('timer:getState');
-      });
+      socket.on('connect', () => socket.emit('timer:getState'));
 
-      socket.on('votesUpdated', function(payload) {
+      socket.on('votesUpdated', payload => {
         renderVotes(payload.data || [], null);
       });
 
-      socket.on('timerState', function(state) {
+      socket.on('timerState', state => {
         if (!state || !state.active) {
-          stopLocalTimer(state && state.elapsedSeconds ? state.elapsedSeconds : 0);
-          renderVotes(currentVotes, state && state.winner ? state.winner : null);
+          stopLocalTimer(state?.elapsedSeconds || 0);
+          renderVotes(currentVotes, state?.winner || null);
           return;
         }
 
         startLocalTimer(state.startedAt, state.elapsedSeconds || 0);
-        renderVotes(currentVotes, state && state.winner ? state.winner : null);
+        renderVotes(currentVotes, state?.winner || null);
       });
 
-      socket.on('timerStarted', function(payload) {
+      socket.on('timerStarted', payload => {
         startLocalTimer(payload.startedAt, 0);
         renderVotes(currentVotes, null);
       });
 
-      socket.on('timerStopped', function(payload) {
+      socket.on('timerStopped', payload => {
         stopLocalTimer(payload.elapsedSeconds || 0);
         renderVotes(currentVotes, payload.winner || null);
       });
 
-      socket.on('timerAutoSettings', function(payload) {
+      socket.on('timerAutoSettings', payload => {
         document.getElementById('auto-start-enabled').checked = !!payload.enabled;
         document.getElementById('auto-start-time').value = payload.time || '';
 
         const status = document.getElementById('auto-start-status');
-        if (status) {
-          if (payload.enabled && payload.time) {
-            status.textContent = 'Status: aktiviert für ' + payload.time;
-            status.style.color = '#0a7a0a';
-          } else {
-            status.textContent = 'Status: deaktiviert';
-            status.style.color = '#666';
-          }
+        if (payload.enabled && payload.time) {
+          status.textContent = 'Status: aktiviert für ' + payload.time;
+          status.classList.remove('text-secondary');
+          status.classList.add('text-success');
+        } else {
+          status.textContent = 'Status: deaktiviert';
+          status.classList.remove('text-success');
+          status.classList.add('text-secondary');
         }
       });
     </script>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+
   </body>
 </html>

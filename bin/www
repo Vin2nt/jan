@@ -28,6 +28,7 @@ var timerState = {
   elapsedSeconds: 0,
   autoStartEnabled: false,
   autoStartTime: null,
+  autoStartLastTriggeredKey: null,
   lastStartedAt: null,
   winner: null
 };
@@ -115,13 +116,24 @@ function parseAutoStartTime(value) {
   return value;
 }
 
+function getAutoStartKey(date, time) {
+  var day = String(date.getFullYear()) + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+  return day + ' ' + time;
+}
+
 function maybeAutoStartTimer() {
   if (!timerState.autoStartEnabled || !timerState.autoStartTime || timerState.active) {
     return;
   }
 
-  var now = getCurrentClockTime();
-  if (now !== timerState.autoStartTime) {
+  var now = new Date();
+  var nowClockTime = getCurrentClockTime();
+  if (nowClockTime !== timerState.autoStartTime) {
+    return;
+  }
+
+  var autoStartKey = getAutoStartKey(now, timerState.autoStartTime);
+  if (timerState.autoStartLastTriggeredKey === autoStartKey) {
     return;
   }
 
@@ -129,6 +141,7 @@ function maybeAutoStartTimer() {
   timerState.startedAt = Date.now();
   timerState.elapsedSeconds = 0;
   timerState.lastStartedAt = timerState.startedAt;
+  timerState.autoStartLastTriggeredKey = autoStartKey;
 
   io.emit('timerStarted', {
     startedAt: timerState.startedAt
@@ -182,6 +195,7 @@ io.on('connection', function(socket) {
     var parsedTime = parseAutoStartTime(payload && payload.time);
     timerState.autoStartEnabled = !!(payload && payload.enabled);
     timerState.autoStartTime = parsedTime;
+    timerState.autoStartLastTriggeredKey = null;
 
     io.emit('timerAutoSettings', {
       enabled: timerState.autoStartEnabled,
