@@ -43,8 +43,8 @@
               <input id="auto-start-enabled" type="checkbox" class="form-check-input">
               <label class="form-check-label">Automatisch starten um</label>
 
-              <input id="auto-start-time" type="text" placeholder="hh:mm" maxlength="5"
-                     class="form-control" style="width: 90px;">
+              <input id="auto-start-time" type="text" inputmode="numeric" placeholder="hh:mm" maxlength="5"
+                class="form-control" style="width: 90px;">
             </div>
 
             <button id="save-auto-start" class="btn btn-primary btn-sm">Speichern</button>
@@ -194,6 +194,32 @@
       document.getElementById('stop-timer').addEventListener('click', () => {
         socket.emit('timer:stop');
       });
+
+      function formatTimeInput(value) {
+        const digits = String(value || '').replace(/\D/g, '').slice(0, 4);
+
+        if (digits.length <= 2) {
+          return digits;
+        }
+
+        return digits.slice(0, digits.length - 2) + ':' + digits.slice(-2);
+      }
+
+      function wireTimeInput(input) {
+        if (!input) {
+          return;
+        }
+
+        input.addEventListener('input', () => {
+          input.value = formatTimeInput(input.value);
+        });
+
+        input.addEventListener('blur', () => {
+          input.value = formatTimeInput(input.value);
+        });
+      }
+
+      wireTimeInput(document.getElementById('auto-start-time'));
 
       document.getElementById('save-auto-start').addEventListener('click', () => {
         const enabled = document.getElementById('auto-start-enabled').checked;
